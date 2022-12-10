@@ -5,7 +5,7 @@ def symbols_counter(bytes):
         dict_sym[chr(bytes[i])] = dict_sym.get(chr(bytes[i]), 0) + 1
     return dict(sorted(dict_sym.items(), key=lambda item: item[1], reverse=False))
 
-#класс
+#класс создать объект с честотой и символом
 class Vertex:
 	def __init__(self, freq, symbol):
 		self.freq = freq
@@ -15,7 +15,28 @@ class Vertex:
 		b = (self.freq <= other.freq)
 		return b
 
-#объндиняет буквы в древо
+#класс для дерева
+class TreeBuilder:
+    def __init__(self, right, left):
+        self.freq = right.freq + left.freq
+        self.right = right
+        self.left = left
+
+    def __lt__(self, other):
+        return self.freq <= other.freq
+
+#распределение vertex объектов
+def tree_gen(arr):
+    while (len(arr) >= 2):
+        left = arr.pop(0)
+        right = arr.pop(0)
+        node = TreeBuilder(left, right)
+        arr.append(node)
+        arr.sort()
+    root_node = arr[0]
+    return root_node
+
+#упорядочивает буквы 
 def sort_leafs(dict_chars):
 	arr = []
 	for i in dict_chars:
@@ -32,15 +53,25 @@ def openbytes(myfile):
 def compress(myfile):
 	bytes = openbytes(myfile)
 	dict_sym = symbols_counter(bytes)
-	list_of_leafs = sort_leafs(dict_sym)
-	
-	print(dict_sym)
-	print(list_of_leafs)
+	print("dict_sym: ", dict_sym)
+	vertex_arr = sort_leafs(dict_sym)
+	print("vertex_arr: ", vertex_arr)
+	tree = tree_gen(vertex_arr)
+	print("tree: ", tree)
+	huffman = huf_func(tree)#код хаффмана
+	text = encrypt(text, huffman)#сформировать в бинарный вид
+		#дерево
+		#сам текст
+	#записать в файл
 
 #суперская функция которая потом разожмёт
 def decompress(myfile):
 	hex = openbytes(myfile)
 	print(f"{hex} decompressed")
+
+	#прочитать дерево 
+	#прочитать текст по дереву
+	#записать в файл
 
 #main
 if __name__ == '__main__':
