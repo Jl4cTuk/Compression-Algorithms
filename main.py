@@ -36,6 +36,18 @@ def tree_gen(arr):
     root_node = arr[0]
     return root_node
 
+#создёет код хаффмана
+def huf_func(root, symbol_code='', huffman_code=dict()):
+	if type(root.right) is Vertex:
+		huffman_code[root.right.symbol] = symbol_code + '1'
+	else:
+		huffman_code = huf_func(root.right, symbol_code + '1', huffman_code)
+	if type(root.left) is Vertex:
+		huffman_code[root.left.symbol] = symbol_code + '0'
+	else:
+		huffman_code = huf_func(root.left, symbol_code + '0', huffman_code)
+	return huffman_code
+
 #упорядочивает буквы 
 def sort_leafs(dict_chars):
 	arr = []
@@ -55,14 +67,12 @@ def compress(myfile):
 	dict_sym = symbols_counter(bytes)
 	print("dict_sym: ", dict_sym)
 	vertex_arr = sort_leafs(dict_sym)
-	print("vertex_arr: ", vertex_arr)
+	#print("vertex_arr: ", vertex_arr)
 	tree = tree_gen(vertex_arr)
-	print("tree: ", tree)
-	huffman = huf_func(tree)#код хаффмана
-	text = encrypt(text, huffman)#сформировать в бинарный вид
-		#дерево
-		#сам текст
-	#записать в файл
+	#print("tree: ", tree)
+	huffman = huf_func(tree)
+	print(huffman)
+	#text = encrypt(text, huffman)
 
 #суперская функция которая потом разожмёт
 def decompress(myfile):
