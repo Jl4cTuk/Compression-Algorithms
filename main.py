@@ -48,6 +48,14 @@ def huf_func(root, symbol_code='', huffman_code=dict()):
 		huffman_code = huf_func(root.left, symbol_code + '0', huffman_code)
 	return huffman_code
 
+#создаст текст из хаффмана
+def huf_text(bytes, huffman):
+    text = ''
+    for i in bytes:
+        ch = chr(i)
+        text += huffman[ch]
+    return text
+
 #упорядочивает буквы 
 def sort_leafs(dict_chars):
 	arr = []
@@ -72,7 +80,13 @@ def compress(myfile):
 	#print("tree: ", tree)
 	huffman = huf_func(tree)
 	print(huffman)
-	#text = encrypt(text, huffman)
+	enc_text = huf_text(bytes, huffman)
+	print(enc_text)
+
+	f = open(f"{myfile}.huf", 'wb')
+	
+	f.write(enc_text.encode())#не правильно работает ПЕРЕДЕЛАТЬ!!!
+	f.close()
 
 #суперская функция которая потом разожмёт
 def decompress(myfile):

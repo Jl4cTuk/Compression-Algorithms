@@ -1,5 +1,6 @@
 { pkgs }: {
   deps = [
+    pkgs.hexdump
     pkgs.python38Full
   ];
   env = {
