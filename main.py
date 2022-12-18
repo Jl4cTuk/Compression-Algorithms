@@ -1,40 +1,65 @@
-#создание словаря для с подсчитанными символами
-def symbols_counter(bytes):
-    dict_sym = {}
-    for i in range(len(bytes)):
-        dict_sym[chr(bytes[i])] = dict_sym.get(chr(bytes[i]), 0) + 1
-    return dict(sorted(dict_sym.items(), key=lambda item: item[1], reverse=False))
+import struct  #для разлиновывания байтов
 
-#класс создать объект с честотой и символом
+
+#класс создать объект с частотой и символом
 class Vertex:
+
 	def __init__(self, freq, symbol):
 		self.freq = freq
 		self.symbol = symbol
-		
+
 	def __lt__(self, other):
 		b = (self.freq <= other.freq)
 		return b
 
+
 #класс для дерева
 class TreeBuilder:
-    def __init__(self, right, left):
-        self.freq = right.freq + left.freq
-        self.right = right
-        self.left = left
 
-    def __lt__(self, other):
-        return self.freq <= other.freq
+	def __init__(self, right, left):
+		self.freq = right.freq + left.freq
+		self.right = right
+		self.left = left
+
+	def __lt__(self, other):
+		return self.freq <= other.freq
+
+
+#чтение файла в байтах
+def openbytes(myfile):
+	f = open(myfile, 'rb')
+	return f.read()
+
+
+#функции сжатия
+#создание словаря для с подсчитанными символами
+def symbols_counter(bytes):
+	dict_sym = {}
+	for i in range(len(bytes)):
+		dict_sym[chr(bytes[i])] = dict_sym.get(chr(bytes[i]), 0) + 1
+	return dict_sym
+
+
+#упорядочивает буквы
+def sort_leafs(dict_chars):
+	arr = []
+	for i in dict_chars:
+		arr.append(Vertex(dict_chars[i], i))
+	arr.sort()
+	return arr
+
 
 #распределение vertex объектов
 def tree_gen(arr):
-    while (len(arr) >= 2):
-        left = arr.pop(0)
-        right = arr.pop(0)
-        node = TreeBuilder(left, right)
-        arr.append(node)
-        arr.sort()
-    root_node = arr[0]
-    return root_node
+	while (len(arr) >= 2):
+		left = arr.pop(0)
+		right = arr.pop(0)
+		node = TreeBuilder(left, right)
+		arr.append(node)
+		arr.sort()
+	root_node = arr[0]
+	return root_node
+
 
 #создёет код хаффмана
 def huf_func(root, symbol_code='', huffman_code=dict()):
@@ -48,61 +73,111 @@ def huf_func(root, symbol_code='', huffman_code=dict()):
 		huffman_code = huf_func(root.left, symbol_code + '0', huffman_code)
 	return huffman_code
 
+
 #создаст текст из хаффмана
 def huf_text(bytes, huffman):
-    text = ''
-    for i in bytes:
-        ch = chr(i)
-        text += huffman[ch]
-    return text
+	text = ''
+	for i in bytes:
+		ch = chr(i)
+		text += huffman[ch]
+	return text
 
-#упорядочивает буквы 
-def sort_leafs(dict_chars):
-	arr = []
-	for i in dict_chars:
-		arr.append(Vertex(dict_chars[i], i))
-	arr.sort()
-	return arr
 
-#чтение файла в байтах
-def openbytes(myfile):
-	f = open(myfile, 'rb')
-	return f.read()
+#супер функция из интернета которая чето там сделает мне крутое
+def rawbytes(letter):
+	outlist = []
+	for cp in letter:
+		num = ord(cp)
+		if num < 256:
+			outlist.append(struct.pack('B', num))
+		elif num < 65535:
+			outlist.append(struct.pack('>H', num))
+		else:
+			b = (num & 0xFF0000) >> 16
+			H = num & 0xFFFF
+			outlist.append(struct.pack('>bH', b, H))
+	return b''.join(outlist)
 
-#супер функция которая сжимает
+
+#буква и её кол-во
+def write_header(filename, dict_sym):
+	col_letters = (len(dict_sym.keys()) - 1).to_bytes(1, byteorder='little')
+	filename.write(col_letters)
+	for letter, code in dict_sym.items():
+		filename.write(rawbytes(letter))
+		filename.write(code.to_bytes(4, byteorder='little'))
+
+
+#из инета
+def get_byte_array(padded_encoded_text):
+	if (len(padded_encoded_text) % 8 != 0):
+		print("Encoded text not padded")
+		exit(0)
+
+	b = bytearray()
+	for i in range(0, len(padded_encoded_text), 8):
+		byte = padded_encoded_text[i:i + 8]
+		b.append(int(byte, 2))
+	return b
+
+
+#паддинг текста по 8
+def pad_encoded_text(encoded_text):
+	extra_padding = 8 - len(encoded_text) % 8
+	for _ in range(extra_padding):
+		encoded_text += "0"
+
+	padded_info = "{0:08b}".format(extra_padding)
+	encoded_text = padded_info + encoded_text
+	return encoded_text
+
+
+#дописываем текст
+def write_text(file, enc_text):
+	enc_text_pad = pad_encoded_text(enc_text)
+	out = get_byte_array(enc_text_pad)
+	file.write(bytes(out))
+
+
+#сжатие
 def compress(myfile):
 	bytes = openbytes(myfile)
 	dict_sym = symbols_counter(bytes)
-	print("dict_sym: ", dict_sym)
+	#print("dict_sym: ", dict_sym)
 	vertex_arr = sort_leafs(dict_sym)
 	#print("vertex_arr: ", vertex_arr)
 	tree = tree_gen(vertex_arr)
 	#print("tree: ", tree)
 	huffman = huf_func(tree)
-	print(huffman)
+	#print(huffman)
 	enc_text = huf_text(bytes, huffman)
-	print(enc_text)
+	#print(enc_text)
 
-	f = open(f"{myfile}.huf", 'wb')
 	
-	f.write(enc_text.encode())#не правильно работает ПЕРЕДЕЛАТЬ!!!
+	f = open("text.huf", 'wb')
+	print(dict_sym)
+	print(enc_text)
+	write_header(f, dict_sym)
+	write_text(f, enc_text)
 	f.close()
+
 
 #суперская функция которая потом разожмёт
 def decompress(myfile):
 	hex = openbytes(myfile)
 	print(f"{hex} decompressed")
 
-	#прочитать дерево 
+	#прочитать дерево
 	#прочитать текст по дереву
 	#записать в файл
+
 
 #main
 if __name__ == '__main__':
 	print("[c]ompress/[d]ecompress?")
-	arg1 = "c" #input()
+	arg1 = "c"  #input()
 	print("input file")
-	arg2 = "Text.txt" #input()
+	arg2 = "text.txt"  #input()
 	if (arg1 == "c"):
 		compress(arg2)
 	elif (arg1 == "d"):
