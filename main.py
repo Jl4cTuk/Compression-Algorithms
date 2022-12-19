@@ -139,44 +139,54 @@ def write_text(file, enc_text):
 	file.write(bytes(out))
 
 
-#сжатие
+#архиватор
 def compress(myfile):
 	bytes = openbytes(myfile)
 	dict_sym = symbols_counter(bytes)
-	#print("dict_sym: ", dict_sym)
 	vertex_arr = sort_leafs(dict_sym)
-	#print("vertex_arr: ", vertex_arr)
 	tree = tree_gen(vertex_arr)
-	#print("tree: ", tree)
 	huffman = huf_func(tree)
-	#print(huffman)
 	enc_text = huf_text(bytes, huffman)
-	#print(enc_text)
 
-	
-	f = open("text.huf", 'wb')
-	print(dict_sym)
-	print(enc_text)
+	file = f"{myfile}.huf"
+	f = open(file, 'wb')
 	write_header(f, dict_sym)
 	write_text(f, enc_text)
 	f.close()
+	print("Compressed")
 
 
-#суперская функция которая потом разожмёт
+#чтение словаря
+def read_header(hex):
+	letter = hex[0]+1
+	header = hex[1:5*letter + 1]
+	dict_sym = dict()
+	for i in range(letter):
+		dict_sym[chr(header[i*5])] = int.from_bytes(header[i*5+1:i*5+5], byteorder='little')
+	return dict_sym
+
+#чтение символов
+def read_text(hex):
+	letter = hex[0]+1
+	enc_text = hex[5*letter + 1:]
+	return enc_text
+
+#антиархиватор ну или декомпрессионер
 def decompress(myfile):
-	hex = openbytes(myfile)
-	print(f"{hex} decompressed")
+	hex = openbytes("text.txt.huf")
 
-	#прочитать дерево
-	#прочитать текст по дереву
-	#записать в файл
-
+	dict_sym = read_header(hex)
+	enc_text = read_text(hex)
+	print(dict_sym)
+	print(enc_text.decode("utf-8"))
+	
+	#print("decompressed")
 
 #main
 if __name__ == '__main__':
-	print("[c]ompress/[d]ecompress?")
-	arg1 = "c"  #input()
-	print("input file")
+	#print("[c]ompress/[d]ecompress?")
+	arg1 = "d"  #input()
+	#print("input file")
 	arg2 = "text.txt"  #input()
 	if (arg1 == "c"):
 		compress(arg2)
