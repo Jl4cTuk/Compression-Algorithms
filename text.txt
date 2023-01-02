@@ -1,1 +1,2 @@
-aaaaaabbbbccccdeee
+abrakadabra
+01101110100010101101110
