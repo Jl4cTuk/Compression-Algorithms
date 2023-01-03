@@ -1,5 +1,7 @@
 import heapq
 from collections import Counter, namedtuple
+import os
+import sys
 
 class Node(namedtuple("Node", ["left", "right"])):
 	def walk(self, code, acc):
@@ -10,9 +12,9 @@ class Leaf(namedtuple("Leaf", ["char"])):
 	def walk(self, code, acc):
 		code[self.char] = acc or "0"
 
-def huffman_encode(s):
+def makeHufCode(dict):
 	h = []
-	for ch, freq in Counter(s).items():
+	for ch, freq in dict.items():
 		h.append((freq, len(h), Leaf(ch)))
 	heapq.heapify(h)
 
@@ -28,25 +30,18 @@ def huffman_encode(s):
 		root.walk(code, "") 
 	return code
 
-def main():
-	s = input()
-	code = huffman_encode(s)
-	encoded = "".join(code[ch] for ch in s)
-	decoded = huffman_decode(encoded, code)
-	
-	print(encoded)
-	print(decoded)
+def toByte(s):
+    return ''.join(chr(int(s[i:i+8][::-1], 2)) for i in range(0, len(s), 8))
 
-def test(n_iter):
-	import random
-	import string
+def toBit(s):
+    return ''.join(bin(ord(x))[2:].rjust(8,'0')[::-1] for x in s)
 
-	for i in range(n_iter):
-		length = random.randint(0, 32)
-		s = "".join(random.choice(string.ascii_letters) for _ in range(length))
-		code = huffman_encode(s)
-		encoded = "".join(code[ch] for ch in s)
-		assert huffman_decode(encoded, code) == s
+def makeDict(s):
+	dict = {}
+	for ch, freq in Counter(s).items():
+		dict[ch] = freq
+
+	return dict
 
 def huffman_decode(en, code):
     pointer = 0
@@ -57,6 +52,77 @@ def huffman_decode(en, code):
                 encoded_str += ch
                 pointer += len(code[ch])
     return encoded_str
+	
+def compress(filename):
+	s = open(filename, "r")
+	file = s.read()
+	dict = makeDict(file)
+	code = makeHufCode(dict)
+	encoded = "".join(code[ch] for ch in file)
 
+	dictlen = len(dict)
+	huffedText = toByte(encoded)
+	bitPadd = 8 - len(encoded)%8
+
+	file = f"{filename}_huf"
+	fileout = open(file, "wb")
+	
+	fileout.write(dictlen.to_bytes(2, 'big')) #запись кол-ва букв
+	for i, j in dict.items(): #запись словаря
+		fileout.write(i.encode())
+		fileout.write(j.to_bytes(2, 'big'))
+	fileout.write(bitPadd.to_bytes(1, 'big')) #запись сколько откусить
+	fileout.write(huffedText.encode()) #запись закод. текста
+	
+	fileout.close()
+
+def decompress(filename):
+	filein = open(filename, "rb")
+	
+	dictlen1 = int.from_bytes(filein.read(2), 'big') #чтение кол-ва букв
+	dict1 = {}
+	for i in range(dictlen1): #создание словаря
+		a = filein.read(1).decode()
+		b = int.from_bytes(filein.read(2), 'big')
+		dict1[a] = b
+	bitPadd1 = int.from_bytes(filein.read(1), 'big') #сколько откусить
+	huffedText1 = toBit(filein.read().decode())[:-bitPadd1] #закод. текст и откусил
+	code1 = makeHufCode(dict1) #создание нового хаффманского словаря
+
+	a = huffman_decode(huffedText1, code1)
+
+	f = f"{filename}"[:-4]
+	file = open(f, "w")
+	file.write(a)
+
+
+def fileExist(filename):
+	if os.path.exists(filename):
+		return True
+	else:
+		return False
+		
+def main():
+	print("choose option: [c] or [d]")
+	option = input()
+	
+	if option == 'c': #compress
+		print("file name for compress:")
+		filename = "text.txt" #input()
+		if fileExist(filename):
+			compress(filename)
+		else:
+			sys.exit("File not found")
+			
+	elif option == 'd': #decompress
+		print("file name for decompress:")
+		filename = "text.txt_huf" #input()
+		if fileExist(filename):
+			decompress(filename)
+		else:
+			sys.exit("File not found")
+	else:
+		print("wrong option")
+	
 if __name__ == "__main__":
 	main()
