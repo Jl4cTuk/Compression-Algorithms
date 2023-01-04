@@ -45,21 +45,21 @@ def makeDict(s):
 
 def huffman_decode(en, code):
     pointer = 0
-    encoded_str = ''
+    encoded_str = b''
     while pointer < len(en):
         for ch in code.keys():
             if en.startswith(code[ch], pointer):
-                encoded_str += ch
+                encoded_str += ch.to_bytes(1, 'big')
                 pointer += len(code[ch])
     return encoded_str
 	
 def compress(filename):
-	s = open(filename, "r")
-	file = s.read()
-	dict = makeDict(file)
+	s = open(filename, "rb")
+	filein = s.read()
+	dict = makeDict(filein)
 	code = makeHufCode(dict)
-	encoded = "".join(code[ch] for ch in file)
-
+	encoded = "".join(code[ch] for ch in filein)
+	
 	dictlen = len(dict)
 	huffedText = toByte(encoded)
 	bitPadd = 8 - len(encoded)%8
@@ -69,7 +69,7 @@ def compress(filename):
 	
 	fileout.write(dictlen.to_bytes(2, 'big')) #запись кол-ва букв
 	for i, j in dict.items(): #запись словаря
-		fileout.write(i.encode())
+		fileout.write(i.to_bytes(2, 'big'))
 		fileout.write(j.to_bytes(2, 'big'))
 	fileout.write(bitPadd.to_bytes(1, 'big')) #запись сколько откусить
 	fileout.write(huffedText.encode()) #запись закод. текста
@@ -79,20 +79,21 @@ def compress(filename):
 def decompress(filename):
 	filein = open(filename, "rb")
 	
-	dictlen1 = int.from_bytes(filein.read(2), 'big') #чтение кол-ва букв
-	dict1 = {}
-	for i in range(dictlen1): #создание словаря
-		a = filein.read(1).decode()
+	dictlen = int.from_bytes(filein.read(2), 'big') #чтение кол-ва букв
+	dict = {}
+	for i in range(dictlen): #создание словаря
+		a = int.from_bytes(filein.read(2), 'big')
 		b = int.from_bytes(filein.read(2), 'big')
-		dict1[a] = b
-	bitPadd1 = int.from_bytes(filein.read(1), 'big') #сколько откусить
-	huffedText1 = toBit(filein.read().decode())[:-bitPadd1] #закод. текст и откусил
-	code1 = makeHufCode(dict1) #создание нового хаффманского словаря
+		dict[a] = b
+	bitPadd = int.from_bytes(filein.read(1), 'big') #сколько откусить
+	huffedText = toBit(filein.read().decode())[:-bitPadd] #закод. текст и откусил
+	code = makeHufCode(dict) #создание нового хаффманского словаря
 
-	a = huffman_decode(huffedText1, code1)
 
-	f = f"{filename}"[:-4]
-	file = open(f, "w")
+	a = huffman_decode(huffedText, code)
+
+	f = f"{filename}_decompr"
+	file = open(f, "wb")
 	file.write(a)
 
 
@@ -101,14 +102,14 @@ def fileExist(filename):
 		return True
 	else:
 		return False
-		
-def main():
+
+
+def main_menu():
 	print("choose option: [c] or [d]")
 	option = input()
-	
 	if option == 'c': #compress
 		print("file name for compress:")
-		filename = "text.txt" #input()
+		filename = input()
 		if fileExist(filename):
 			compress(filename)
 		else:
@@ -116,13 +117,16 @@ def main():
 			
 	elif option == 'd': #decompress
 		print("file name for decompress:")
-		filename = "text.txt_huf" #input()
+		filename = input()
 		if fileExist(filename):
 			decompress(filename)
 		else:
 			sys.exit("File not found")
 	else:
 		print("wrong option")
+
+def main():
+	main_menu()
 	
 if __name__ == "__main__":
 	main()
