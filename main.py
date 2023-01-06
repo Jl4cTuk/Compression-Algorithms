@@ -31,10 +31,10 @@ def makeHufCode(dict):
 	return code
 
 def toByte(s):
-    return ''.join(chr(int(s[i:i+8][::-1], 2)) for i in range(0, len(s), 8))
+    return b''.join((int(s[i:i+8][::-1], 2)).to_bytes(1, 'big') for i in range(0, len(s), 8))
 
 def toBit(s):
-    return ''.join(bin(ord(x))[2:].rjust(8,'0')[::-1] for x in s)
+    return ''.join(bin(x)[2:].rjust(8,'0')[::-1] for x in s)
 
 def makeDict(s):
 	dict = {}
@@ -66,13 +66,13 @@ def compress(filename):
 
 	file = f"{filename}_huf"
 	fileout = open(file, "wb")
-	
+
 	fileout.write(dictlen.to_bytes(2, 'big')) #запись кол-ва букв
 	for i, j in dict.items(): #запись словаря
-		fileout.write(i.to_bytes(2, 'big'))
-		fileout.write(j.to_bytes(2, 'big'))
+		fileout.write(i.to_bytes(3, 'big'))
+		fileout.write(j.to_bytes(3, 'big'))
 	fileout.write(bitPadd.to_bytes(1, 'big')) #запись сколько откусить
-	fileout.write(huffedText.encode()) #запись закод. текста
+	fileout.write(huffedText) #запись закод. текста
 	
 	fileout.close()
 
@@ -82,13 +82,12 @@ def decompress(filename):
 	dictlen = int.from_bytes(filein.read(2), 'big') #чтение кол-ва букв
 	dict = {}
 	for i in range(dictlen): #создание словаря
-		a = int.from_bytes(filein.read(2), 'big')
-		b = int.from_bytes(filein.read(2), 'big')
+		a = int.from_bytes(filein.read(3), 'big')
+		b = int.from_bytes(filein.read(3), 'big')
 		dict[a] = b
 	bitPadd = int.from_bytes(filein.read(1), 'big') #сколько откусить
-	huffedText = toBit(filein.read().decode())[:-bitPadd] #закод. текст и откусил
+	huffedText = toBit(filein.read())[:-bitPadd] #закод. текст и откусил
 	code = makeHufCode(dict) #создание нового хаффманского словаря
-
 
 	a = huffman_decode(huffedText, code)
 
