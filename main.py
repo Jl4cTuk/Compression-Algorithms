@@ -27,4 +27,5 @@ def main():
 			arithmetic.decompress(file)
 	
 if __name__ == "__main__":
-	main()
+	#main()
+	arithmetic.compress("txt")

@@ -11,6 +11,8 @@ replit = "^3.2.4"
 Flask = "^2.2.0"
 urllib3 = "^1.26.12"
 bitstring = "^4.0.1"
+prettytable = "^3.6.0"
+bitarray = "^2.6.2"
 
 [tool.poetry.dev-dependencies]
 debugpy = "^1.6.2"
