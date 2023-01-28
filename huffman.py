@@ -57,7 +57,6 @@ def compress(filename):
 	s = open(filename, "rb")
 	filein = s.read()
 	dict = makeDict(filein)
-	print(dict)
 	code = makeHufCode(dict)
 	encoded = "".join(code[ch] for ch in filein)
 	

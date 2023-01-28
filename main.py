@@ -28,7 +28,4 @@ def main():
 			arithmetic.decompress(file)
 	
 if __name__ == "__main__":
-    arithmetic.compress('txt')
-    arithmetic.decompress('enc')
-    result = filecmp.cmp('txt', 'dec')
-    print(result)
+    main()

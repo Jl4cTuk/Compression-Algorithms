@@ -19,10 +19,10 @@ def bit_read(f):
         if bit == b"":
             bit_extra, bit_r = bit_extra + 1, 255
             if bit_extra > 14:
-                exit(1)
+                exit('error')
         bit_l = 8
-    t, bit_r, bit_l = bit_r & 1, bit_r >> 1, bit_l - 1
-    return t
+    sequence, bit_r, bit_l = bit_r & 1, bit_r >> 1, bit_l - 1
+    return sequence
 
 def bit_plus_follow(bit, bit_follow, f):    
     bit_write(bit, f)
@@ -43,10 +43,10 @@ def compress(file):
     for i in occurrences:
         symbol_intervals.append(occurrences[i] + symbol_intervals[len(symbol_intervals)-1])
 
-    f = open("enc", 'wb+')
+    f = open("enc_aric", 'wb+')
     f.write(len(occurrences).to_bytes(1, "little")) #длина словаря
     for ch, freq in occurrences.items(): #словарь
-        f.write(ch.to_bytes(1, "little"))
+        f.write(ch.to_bytes(3, "little"))
         f.write(freq.to_bytes(3, "little"))
     txt = open(file, 'r').read()
     boarders = [0, 65535]
@@ -88,6 +88,8 @@ def compress(file):
         bit_plus_follow(0, bit_follow, f)
     else:
         bit_plus_follow(1, bit_follow, f)
+    bit_w = bit_w >> bit_l
+    f.write(bit_w.to_bytes(1, "little"))
     f.close()
 
 def decompress(file):
@@ -96,10 +98,10 @@ def decompress(file):
     occurrences = {}
     symbol_intervals = [0, 1]
     f = open(file, "rb")
-    out = open("dec", "wb+")
+    out = open("dec_aric", "wb+")
     dict_len = int.from_bytes(f.read(1), 'little')
     for x in range(dict_len):
-        ch, freq = int.from_bytes(f.read(1), 'little'), int.from_bytes(f.read(3), 'little')
+        ch, freq = int.from_bytes(f.read(3), 'little'), int.from_bytes(f.read(3), 'little')
         occurrences[ch] = freq
     for i in occurrences:
         symbol_intervals.append(occurrences[i] + symbol_intervals[-1])
