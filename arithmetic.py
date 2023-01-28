@@ -1,110 +1,135 @@
 from collections import Counter
-from prettytable import PrettyTable
 
-def BitsPlusFollow(bit, bits_to_follow, all_bits):
-    all_bits += str(bit)
-    for i in range(bits_to_follow):
-        all_bits += str(1-bit)
-    bits_to_follow = 0
-    return all_bits
+def do_nothing():
+    pass
+def bit_write(bit, f):    
+    global bit_w, bit_l
+    bit_w, bit_l = bit_w >> 1, bit_l - 1
+    if (bit & 1):
+        bit_w |= 0x80
+    if bit_l == 0:
+        bit_l = 8
+        f.write(bit_w.to_bytes(1, "little"))
 
-def toByte(s):
-    return b''.join((int(s[i:i+8][::-1], 2)).to_bytes(1, 'big') for i in range(0, len(s), 8))
+def bit_read(f):  
+    global bit_r, bit_l, bit_extra
+    if bit_l == 0:
+        bit = f.read(1)
+        bit_r = int.from_bytes(bit, "little")
+        if bit == b"":
+            bit_extra, bit_r = bit_extra + 1, 255
+            if bit_extra > 14:
+                exit(1)
+        bit_l = 8
+    t, bit_r, bit_l = bit_r & 1, bit_r >> 1, bit_l - 1
+    return t
+
+def bit_plus_follow(bit, bit_follow, f):    
+    bit_write(bit, f)
+    for i in range(bit_follow):
+        bit_write(1 - bit, f)
 
 def compress(file):
+    global bit_w, bit_l
+    s = open(file, 'rb').read()
+    bit_l, bit_w = 8, 0
+    occurrences = {}
+    symbol_intervals = [0, 1]
     
-    filein = open(file, 'r')
-    s = filein.read() #text
-    
-    symbol_dict = {}
     for ch, freq in Counter(s).items():
-        symbol_dict[ch] = freq
-
-    sorted_dict = dict(sorted(symbol_dict.items(), key=lambda item: item[1], reverse=True)) #set
-
-    ch = {}
-    freq_ = {}
-    b = {}
-    boarders = {}
-
-    all_bits = ""
-    freq_[0] = 0
-    b[0] = 0
+        occurrences[ch] = freq
+    occurrences = dict(sorted(occurrences.items(), key = lambda item: item[1], reverse = True))
     
-    l = 0
-    j = 1
-    for pair, count in sorted_dict.items():
-        ch[pair[0]] = j
-        freq_[j] = count
-        b[j] = l + count
-        j += 1
-        l += count
-    
-    i = 0
-    delitel = b[j-1]
-    boarders[0] = [0, 65535]
-    First_qtr = (boarders[0][1] + 1) // 4
-    Half = First_qtr * 2
-    Third_qtr = First_qtr * 3
-    bits_to_follow = 0
-    for index in s:
-        j = ch[index]
-        i += 1
-        boarders[i] = [boarders[i-1][0] + b[j-1] * (boarders[i-1][1] - boarders[i-1][0] + 1) // delitel, 
-                      boarders[i-1][0] + b[j] * (boarders[i-1][1] - boarders[i-1][0] + 1) // delitel - 1]
+    for i in occurrences:
+        symbol_intervals.append(occurrences[i] + symbol_intervals[len(symbol_intervals)-1])
+
+    f = open("enc", 'wb+')
+    f.write(len(occurrences).to_bytes(1, "little")) #длина словаря
+    for ch, freq in occurrences.items(): #словарь
+        f.write(ch.to_bytes(1, "little"))
+        f.write(freq.to_bytes(3, "little"))
+    txt = open(file, 'r').read()
+    boarders = [0, 65535]
+    dif = boarders[1] - boarders[0] + 1
+    divider = symbol_intervals[-1]
+    f_qtr, half, t_qtr, bit_follow = 16384, 32768, 49152, 0
+    for ch in txt:
+        j = 2 + next(index for index, key in enumerate(occurrences) if key == ord(ch))
+        boarders = [boarders[0] + symbol_intervals[j - 1] * dif // divider, boarders[0] + symbol_intervals[j] * dif // divider - 1]
         while True:
-            if boarders[i][1] < Half:
-                all_bits = BitsPlusFollow(0, bits_to_follow, all_bits)
-                bits_to_follow = 0
-            elif boarders[i][0] >= Half:
-                all_bits = BitsPlusFollow(1, bits_to_follow, all_bits)
-                bits_to_follow = 0
-                boarders[i][0] -= Half
-                boarders[i][1] -= Half
-            elif boarders[i][0] >= First_qtr and boarders[i][1] < Third_qtr:
-                bits_to_follow += 1
-                boarders[i][0] -= First_qtr
-                boarders[i][1] -= First_qtr
+            if boarders[1] < half:
+                bit_plus_follow(0, bit_follow, f)
+                bit_follow=0
+            elif boarders[0] >= half:
+                bit_plus_follow(1, bit_follow, f)
+                bit_follow, boarders = 0, [boarders[0] - half, boarders[1] - half]
+            elif boarders[0] >= f_qtr and boarders[1] < t_qtr:
+                bit_follow, boarders = bit_follow + 1, [boarders[0] - f_qtr, boarders[1] - f_qtr]
             else:
                 break
-            boarders[i][0] += boarders[i][0]
-            boarders[i][1] += boarders[i][1] + 1
+            boarders = [boarders[0]*2, boarders[1]*2 + 1]
+        dif = boarders[1] - boarders[0] + 1
 
-
-    bitPadd = 8 - len(all_bits)%8
-    bitstr = toByte(str(all_bits)[10:-2])
-    
-    #запись в байтах
-    f = open("enc_aric", 'wb')
-    f.write(len(s).to_bytes(4, 'big'))
-    f.write(len(sorted_dict).to_bytes(2, 'big'))
-    for ch in sorted_dict:
-        f.write(ch.encode())
-        f.write(sorted_dict[ch].to_bytes(2, 'big'))
-    f.write(bitPadd.to_bytes(1, 'big'))
-    f.write(bitstr)
+    boarders = [boarders[0] + symbol_intervals[0] * dif // divider, boarders[0] + symbol_intervals[1] * dif // divider - 1]
+    while True:
+        if boarders[1] < half:
+            bit_plus_follow(0, bit_follow, f)
+            bit_follow=0
+        elif boarders[0] >= half:
+            bit_plus_follow(1, bit_follow, f)
+            bit_follow, boarders = 0, [boarders[0] - half, boarders[1] - half]
+        elif boarders[0] >= f_qtr and boarders[1] < t_qtr:
+            bit_follow, boarders = bit_follow + 1, [boarders[0] - f_qtr, boarders[1] - f_qtr]
+        else:
+            break
+        boarders = [boarders[0]*2, boarders[1]*2 + 1]
+    bit_follow += 1
+    if boarders[0] < f_qtr:
+        bit_plus_follow(0, bit_follow, f)
+    else:
+        bit_plus_follow(1, bit_follow, f)
     f.close()
 
 def decompress(file):
-
-    filein = open(file, 'rb')
-
-    #чтение
-    length = int.from_bytes(filein.read(4), 'big') #длина текста
-    dictlen = int.from_bytes(filein.read(2), 'big') #кол-во
-    dict = {}
-    p = []
-    list = ""
-    for i in range(dictlen):
-        a = str(filein.read(1).decode())
-        b = int.from_bytes(filein.read(2), 'big')
-        dict[a] = b
-        p.append(dict[a]/length)
-        list+=a
-
-    
-    #запись
-    f = open("dec_aric", 'wb')
-    f.close()
-
-
+    global bit_r, bit_l, bit_extra
+    bit_r = bit_l = bit_extra = value = 0
+    occurrences = {}
+    symbol_intervals = [0, 1]
+    f = open(file, "rb")
+    out = open("dec", "wb+")
+    dict_len = int.from_bytes(f.read(1), 'little')
+    for x in range(dict_len):
+        ch, freq = int.from_bytes(f.read(1), 'little'), int.from_bytes(f.read(3), 'little')
+        occurrences[ch] = freq
+    for i in occurrences:
+        symbol_intervals.append(occurrences[i] + symbol_intervals[-1])
+    boarders = [0, 65535]
+    dif = boarders[1] - boarders[0] + 1
+    divider = symbol_intervals[-1]
+    f_qtr, half, t_qtr = 16384, 32768, 49152
+    lst = list(occurrences.keys())
+    for i in range(16):
+        bit = bit_read(f)
+        value = value*2 + bit
+    while True:
+        freq, j = ((value - boarders[0] + 1) * divider - 1) // dif, 1
+        while symbol_intervals[j] <= freq: #поиск
+            j += 1
+        boarders = [boarders[0] + symbol_intervals[j - 1] * dif // divider, boarders[0] + symbol_intervals[j] * dif // divider - 1]
+        while True:
+            if boarders[1] < half:
+                do_nothing()
+            elif boarders[0] >= half:
+                boarders, value = [boarders[0] - half, boarders[1] - half], value - half
+            elif boarders[0] >= f_qtr and boarders[1] < t_qtr:
+                boarders, value = [boarders[0] - f_qtr, boarders[1] - f_qtr], value - f_qtr
+            else:
+                break
+            boarders = [boarders[0]*2, boarders[1]*2 + 1]
+            k = bit_read(f)
+            value = value*2 + k
+        if j == 1:
+            break
+        out.write(lst[j - 2].to_bytes(1, "little")) 
+        dif = boarders[1] - boarders[0] + 1
+    out.close()

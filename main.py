@@ -1,4 +1,5 @@
 import os
+import filecmp
 import huffman
 import arithmetic
 
@@ -27,5 +28,7 @@ def main():
 			arithmetic.decompress(file)
 	
 if __name__ == "__main__":
-	#main()
-	arithmetic.compress("txt")
+    arithmetic.compress('txt')
+    arithmetic.decompress('enc')
+    result = filecmp.cmp('txt', 'dec')
+    print(result)
