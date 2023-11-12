@@ -1,137 +1,211 @@
+#!/usr/bin/env python3
+import time
+import os
+from mpmath import *
+import filecmp
 from collections import Counter
 
-def do_nothing():
-    pass
-def bit_write(bit, f):    
-    global bit_w, bit_l
-    bit_w, bit_l = bit_w >> 1, bit_l - 1
-    if (bit & 1):
-        bit_w |= 0x80
-    if bit_l == 0:
-        bit_l = 8
-        f.write(bit_w.to_bytes(1, "little"))
+def arithmetic_encode(source_bytes):
+    maximum = 4294967295
+    third = 3221225472
+    quarter = 1073741824
+    half = 2147483648
 
-def bit_read(f):  
-    global bit_r, bit_l, bit_extra
-    if bit_l == 0:
-        bit = f.read(1)
-        bit_r = int.from_bytes(bit, "little")
-        if bit == b"":
-            bit_extra, bit_r = bit_extra + 1, 255
-            if bit_extra > 14:
-                exit('error')
-        bit_l = 8
-    sequence, bit_r, bit_l = bit_r & 1, bit_r >> 1, bit_l - 1
-    return sequence
+    bytes_freq = Counter(source_bytes)
+    probabilities = {}
+    for ch, count in bytes_freq.items():
+        probabilities[ch] = count / len(source_bytes)
 
-def bit_plus_follow(bit, bit_follow, f):    
-    bit_write(bit, f)
-    for i in range(bit_follow):
-        bit_write(1 - bit, f)
+    cumulative_freq = [0.0]
+    for symbol in probabilities.values():
+        cumulative_freq.append(cumulative_freq[-1] + symbol)
+    cumulative_freq.pop()
+    cumulative_freq = {k: v for k, v in zip(probabilities.keys(), cumulative_freq)}
 
-def compress(file):
-    global bit_w, bit_l
-    s = open(file, 'rb').read()
-    bit_l, bit_w = 8, 0
-    occurrences = {}
-    symbol_intervals = [0, 1]
-    
-    for ch, freq in Counter(s).items():
-        occurrences[ch] = freq
-    occurrences = dict(sorted(occurrences.items(), key = lambda item: item[1], reverse = True))
-    
-    for i in occurrences:
-        symbol_intervals.append(occurrences[i] + symbol_intervals[len(symbol_intervals)-1])
+    encoded_numbers = []
+    lower_bound, upper_bound = 0, maximum
+    straddle = 0
 
-    f = open("enc_aric", 'wb+')
-    f.write(len(occurrences).to_bytes(1, "little")) #длина словаря
-    for ch, freq in occurrences.items(): #словарь
-        f.write(ch.to_bytes(3, "little"))
-        f.write(freq.to_bytes(3, "little"))
-    txt = open(file, 'r').read()
-    boarders = [0, 65535]
-    dif = boarders[1] - boarders[0] + 1
-    divider = symbol_intervals[-1]
-    f_qtr, half, t_qtr, bit_follow = 16384, 32768, 49152, 0
-    for ch in txt:
-        j = 2 + next(index for index, key in enumerate(occurrences) if key == ord(ch))
-        boarders = [boarders[0] + symbol_intervals[j - 1] * dif // divider, boarders[0] + symbol_intervals[j] * dif // divider - 1]
+    for byte in source_bytes:
+        range_width  = upper_bound  - lower_bound + 1
+
+        lower_bound += ceil(range_width * cumulative_freq[byte])
+        upper_bound = lower_bound + floor(range_width * probabilities[byte])
+
+        temporary_numbers = []
         while True:
-            if boarders[1] < half:
-                bit_plus_follow(0, bit_follow, f)
-                bit_follow=0
-            elif boarders[0] >= half:
-                bit_plus_follow(1, bit_follow, f)
-                bit_follow, boarders = 0, [boarders[0] - half, boarders[1] - half]
-            elif boarders[0] >= f_qtr and boarders[1] < t_qtr:
-                bit_follow, boarders = bit_follow + 1, [boarders[0] - f_qtr, boarders[1] - f_qtr]
+            if upper_bound < half:
+                temporary_numbers.append(0)
+                temporary_numbers.extend([1]*straddle)
+                straddle = 0
+            elif lower_bound >= half:
+                temporary_numbers.append(1)
+                temporary_numbers.extend([0]*straddle)
+                straddle = 0
+                lower_bound -= half
+                upper_bound -= half
+            elif lower_bound >= quarter and upper_bound < third:
+                straddle += 1
+                lower_bound -= quarter
+                upper_bound -= quarter
             else:
                 break
-            boarders = [boarders[0]*2, boarders[1]*2 + 1]
-        dif = boarders[1] - boarders[0] + 1
 
-    boarders = [boarders[0] + symbol_intervals[0] * dif // divider, boarders[0] + symbol_intervals[1] * dif // divider - 1]
-    while True:
-        if boarders[1] < half:
-            bit_plus_follow(0, bit_follow, f)
-            bit_follow=0
-        elif boarders[0] >= half:
-            bit_plus_follow(1, bit_follow, f)
-            bit_follow, boarders = 0, [boarders[0] - half, boarders[1] - half]
-        elif boarders[0] >= f_qtr and boarders[1] < t_qtr:
-            bit_follow, boarders = bit_follow + 1, [boarders[0] - f_qtr, boarders[1] - f_qtr]
-        else:
+            if temporary_numbers:
+                encoded_numbers.extend(temporary_numbers)
+                temporary_numbers = []
+
+            lower_bound *= 2
+            upper_bound = 2 * upper_bound + 1
+
+    encoded_numbers.extend([0] + [1]*straddle if lower_bound < quarter else [1] + [0]*straddle)
+
+    return encoded_numbers
+
+def arithmetic_decode(encoded_numbers, probability_model, text_length):
+    prec = 32
+    maximum = 4294967295
+    third = 3221225472
+    quarter = 1073741824
+    half = 2147483648
+
+    alphabet = list(probability_model)
+    cumulative_freq = [0]
+    for symbol_index in probability_model:
+        cumulative_freq.append(cumulative_freq[-1] + probability_model[symbol_index])
+    cumulative_freq.pop()
+
+    probability_model = list(probability_model.values())
+
+    encoded_numbers.extend(prec * [0])
+    decoded_symbols = text_length * [0]
+
+    current_value = int(''.join(str(a) for a in encoded_numbers[0:prec]), 2)
+    bit_position = prec
+    lower_bound, upper_bound = 0, maximum
+
+    decoded_position = 0
+    while 1:
+        current_range = upper_bound - lower_bound+1
+        symbol_index = len(cumulative_freq)  # установим значение по умолчанию
+        value_to_find = (current_value - lower_bound) / current_range
+        for i, item in enumerate(cumulative_freq):
+            if item >= value_to_find:
+                symbol_index = i
+                break
+        symbol_index -= 1
+        decoded_symbols[decoded_position] = alphabet[symbol_index]
+
+        lower_bound = lower_bound + ceil(cumulative_freq[symbol_index] * current_range)
+        upper_bound = lower_bound + floor(probability_model[symbol_index] * current_range)
+
+        while True:
+            if upper_bound < half:
+                pass
+            elif lower_bound >= half:
+                lower_bound = lower_bound - half
+                upper_bound = upper_bound - half
+                current_value = current_value - half
+            elif lower_bound >= quarter and upper_bound < third:
+                lower_bound = lower_bound - quarter
+                upper_bound = upper_bound - quarter
+                current_value = current_value - quarter
+            else:
+                break
+            lower_bound = 2 * lower_bound
+            upper_bound = 2 * upper_bound + 1
+            current_value = 2 * current_value + encoded_numbers[bit_position]
+            bit_position += 1
+            if bit_position == len(encoded_numbers)+1:
+                break
+
+        decoded_position += 1
+        if decoded_position == text_length or bit_position == len(encoded_numbers) +1:
             break
-        boarders = [boarders[0]*2, boarders[1]*2 + 1]
-    bit_follow += 1
-    if boarders[0] < f_qtr:
-        bit_plus_follow(0, bit_follow, f)
+    return bytes(decoded_symbols)
+
+def encode(file_name):
+    with open(file_name, 'rb') as source_file:
+        input_bytes = source_file.read()
+
+    byte_freq = dict(Counter(input_bytes))
+
+    encoded_sequence = arithmetic_encode(input_bytes)
+    encoded_sequence_str = ''.join(map(str, encoded_sequence))
+
+    padding_bits_count = 8 - len(encoded_sequence_str) % 8
+    encoded_sequence_str += "0" * padding_bits_count
+
+    padding_info_str = "{0:08b}".format(padding_bits_count)
+    padded_encoded_str = padding_info_str + encoded_sequence_str
+
+    output_byte_array = bytearray([int(padded_encoded_str[i:i + 8], 2) for i in range(0, len(padded_encoded_str), 8)])
+
+    with open('encoded', 'wb') as encoded_file:
+        encoded_file.write(len(input_bytes).to_bytes(4, 'little'))
+        encoded_file.write((len(byte_freq.keys()) - 1).to_bytes(1, 'little'))
+
+        for byte_value, frequency in byte_freq.items():
+            encoded_file.write(byte_value.to_bytes(1, 'little'))
+            encoded_file.write(frequency.to_bytes(4, 'little'))
+
+        encoded_file.write(bytes(output_byte_array))
+
+def decode(file_name):
+    with open(file_name, 'rb') as encoded_file:
+        encoded_data_bytes = encoded_file.read()
+
+    original_file_length = int.from_bytes(encoded_data_bytes[0:4], 'little')
+    unique_byte_count = encoded_data_bytes[4] + 1
+    header_bytes = encoded_data_bytes[5: 5 * unique_byte_count + 5]
+
+    byte_frequencies = dict()
+    for i in range(unique_byte_count):
+        byte_value = header_bytes[i * 5]
+        frequency = int.from_bytes(header_bytes[i * 5 + 1:i * 5 + 5], 'little')
+        byte_frequencies[byte_value] = frequency
+
+    probabilities = {}
+    for ch, count in byte_frequencies.items():
+        probabilities[ch] = count / original_file_length
+
+    encoded_text_bytes = encoded_data_bytes[5 * (encoded_data_bytes[4] + 1) + 5:]
+    padded_encoded_str = ''.join([bin(byte)[2:].rjust(8, '0') for byte in encoded_text_bytes])
+
+    padding_bits_count = int(padded_encoded_str[:8], 2)
+    encoded_sequence = padded_encoded_str[8: -padding_bits_count if padding_bits_count != 0 else None]
+    encoded_sequence = [int(bit) for bit in encoded_sequence]
+
+    decoded_data = arithmetic_decode(encoded_sequence, probabilities, original_file_length)
+
+    with open('decoded', 'wb') as decoded_file:
+        decoded_file.write(decoded_data)
+
+if __name__ == '__main__':
+    # Encode
+    src = 'source'
+    start_time = time.time()
+    encode(src)
+    end_time = time.time()
+    encode_time = end_time - start_time
+
+    original_size = os.path.getsize(src)
+    compressed_size = os.path.getsize('encoded')
+    compression_ratio = (original_size - compressed_size) / original_size * 100
+
+    print(f"Время кодирования: {encode_time:.4f} сек.")
+    print(f"Процент сжатия: {compression_ratio:.2f}%")
+    
+    # Decode
+    enc = 'encoded'
+    start_time = time.time()
+    decode(enc)
+    end_time = time.time()
+    decode_time = end_time - start_time
+    
+    print(f"Время декодирования: {decode_time:.4f} сек.")
+    
+    if filecmp.cmp('source', 'decoded'):
+        print("Исходный файл и декодированный - равны")
     else:
-        bit_plus_follow(1, bit_follow, f)
-    bit_w = bit_w >> bit_l
-    f.write(bit_w.to_bytes(1, "little"))
-    f.close()
-
-def decompress(file):
-    global bit_r, bit_l, bit_extra
-    bit_r = bit_l = bit_extra = value = 0
-    occurrences = {}
-    symbol_intervals = [0, 1]
-    f = open(file, "rb")
-    out = open("dec_aric", "wb+")
-    dict_len = int.from_bytes(f.read(1), 'little')
-    for x in range(dict_len):
-        ch, freq = int.from_bytes(f.read(3), 'little'), int.from_bytes(f.read(3), 'little')
-        occurrences[ch] = freq
-    for i in occurrences:
-        symbol_intervals.append(occurrences[i] + symbol_intervals[-1])
-    boarders = [0, 65535]
-    dif = boarders[1] - boarders[0] + 1
-    divider = symbol_intervals[-1]
-    f_qtr, half, t_qtr = 16384, 32768, 49152
-    lst = list(occurrences.keys())
-    for i in range(16):
-        bit = bit_read(f)
-        value = value*2 + bit
-    while True:
-        freq, j = ((value - boarders[0] + 1) * divider - 1) // dif, 1
-        while symbol_intervals[j] <= freq: #поиск
-            j += 1
-        boarders = [boarders[0] + symbol_intervals[j - 1] * dif // divider, boarders[0] + symbol_intervals[j] * dif // divider - 1]
-        while True:
-            if boarders[1] < half:
-                do_nothing()
-            elif boarders[0] >= half:
-                boarders, value = [boarders[0] - half, boarders[1] - half], value - half
-            elif boarders[0] >= f_qtr and boarders[1] < t_qtr:
-                boarders, value = [boarders[0] - f_qtr, boarders[1] - f_qtr], value - f_qtr
-            else:
-                break
-            boarders = [boarders[0]*2, boarders[1]*2 + 1]
-            k = bit_read(f)
-            value = value*2 + k
-        if j == 1:
-            break
-        out.write(lst[j - 2].to_bytes(1, "little")) 
-        dif = boarders[1] - boarders[0] + 1
-    out.close()
+        print("Исходный файл и декодированный - НЕ РАВНЫ!!!")
